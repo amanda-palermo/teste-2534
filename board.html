@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Quadro Compartilhado</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <h1>Quadro Compartilhado</h1>
+    <div class="user-info">
+      <span id="user-email"></span>
+      <button id="logout-btn">Sair</button>
+    </div>
+  </header>
+
+  <main>
+    <div class="toolbar">
+      <button id="add-note-btn">+ Anotação</button>
+      <button id="add-checkbox-btn">+ Item com checkbox</button>
+    </div>
+    <div id="items-list"></div>
+    <div class="empty-msg" id="empty-msg" style="display:none;">Nenhum item ainda. Adicione o primeiro acima.</div>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="config.js"></script>
+  <script>
+    const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    const itemsList = document.getElementById("items-list");
+    const emptyMsg = document.getElementById("empty-msg");
+    let currentUserEmail = "";
+
+    const MARKERS = [
+      { value: "", label: "Sem marcador" },
+      { value: "red", label: "🔴 Vermelho" },
+      { value: "yellow", label: "🟡 Amarelo" },
+      { value: "green", label: "🟢 Verde" },
+      { value: "blue", label: "🔵 Azul" },
+    ];
+
+    // --- Autenticação ---
+    async function requireAuth() {
+      const { data } = await supabaseClient.auth.getSession();
+      if (!data.session) {
+        window.location.href = "index.html";
+        return null;
+      }
+      return data.session.user;
+    }
+
+    document.getElementById("logout-btn").addEventListener("click", async () => {
+      await supabaseClient.auth.signOut();
+      window.location.href = "index.html";
+    });
+
+    // --- Renderização ---
+    function formatMeta(item) {
+      if (!item.updated_by_email) return "";
+      const date = new Date(item.updated_at);
+      const dateStr = date.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
+      return `editado por ${item.updated_by_email} em ${dateStr}`;
+    }
+
+    function renderItem(item) {
+      const el = document.createElement("div");
+      el.className = "item" + (item.marker ? ` marker-${item.marker}` : "");
+      el.dataset.id = item.id;
+
+      let html = "";
+      if (item.kind === "checkbox") {
+        html += `<input type="checkbox" class="check-input" ${item.checked ? "checked" : ""} />`;
+      }
+      html += `<div class="content">
+        <textarea class="content-input" rows="1">${item.content}</textarea>
+        <div class="meta">${formatMeta(item)}</div>
+      </div>
+      <div class="controls">
+        <select class="marker-select">
+          ${MARKERS.map(m => `<option value="${m.value}" ${item.marker === m.value ? "selected" : ""}>${m.label}</option>`).join("")}
+        </select>
+        <button class="delete-btn" title="Excluir">✕</button>
+      </div>`;
+
+      el.innerHTML = html;
+
+      if (item.kind === "checkbox") {
+        const checkInput = el.querySelector(".check-input");
+        const textarea = el.querySelector(".content-input");
+        if (item.checked) textarea.classList.add("checked-text");
+        checkInput.addEventListener("change", async () => {
+          await updateItem(item.id, { checked: checkInput.checked });
+        });
+      }
+
+      const textarea = el.querySelector(".content-input");
+      autoResize(textarea);
+      textarea.addEventListener("input", () => autoResize(textarea));
+      textarea.addEventListener("blur", async () => {
+        if (textarea.value !== item.content) {
+          await updateItem(item.id, { content: textarea.value });
+        }
+      });
+
+      el.querySelector(".marker-select").addEventListener("change", async (e) => {
+        await updateItem(item.id, { marker: e.target.value || null });
+      });
+
+      el.querySelector(".delete-btn").addEventListener("click", async () => {
+        if (confirm("Excluir este item?")) {
+          await supabaseClient.from("board_items").delete().eq("id", item.id);
+        }
+      });
+
+      return el;
+    }
+
+    function autoResize(textarea) {
+      textarea.style.height = "auto";
+      textarea.style.height = textarea.scrollHeight + "px";
+    }
+
+    function renderAll(items) {
+      itemsList.innerHTML = "";
+      emptyMsg.style.display = items.length === 0 ? "block" : "none";
+      items.forEach((item) => itemsList.appendChild(renderItem(item)));
+    }
+
+    // --- Dados ---
+    async function loadItems() {
+      const { data, error } = await supabaseClient
+        .from("board_items")
+        .select("*")
+        .order("created_at", { ascending: true });
+      if (error) {
+        console.error(error);
+        return;
+      }
+      renderAll(data);
+    }
+
+    async function updateItem(id, fields) {
+      await supabaseClient
+        .from("board_items")
+        .update({ ...fields, updated_by_email: currentUserEmail, updated_at: new Date().toISOString() })
+        .eq("id", id);
+    }
+
+    async function addItem(kind) {
+      await supabaseClient.from("board_items").insert({
+        kind,
+        content: kind === "note" ? "Nova anotação..." : "Novo item...",
+        updated_by_email: currentUserEmail,
+      });
+    }
+
+    document.getElementById("add-note-btn").addEventListener("click", () => addItem("note"));
+    document.getElementById("add-checkbox-btn").addEventListener("click", () => addItem("checkbox"));
+
+    // --- Tempo real: atualiza quando outro usuário muda algo ---
+    function subscribeRealtime() {
+      supabaseClient
+        .channel("board_items_changes")
+        .on("postgres_changes", { event: "*", schema: "public", table: "board_items" }, () => {
+          loadItems();
+        })
+        .subscribe();
+    }
+
+    // --- Início ---
+    (async function init() {
+      const user = await requireAuth();
+      if (!user) return;
+      currentUserEmail = user.email;
+      document.getElementById("user-email").textContent = user.email;
+      await loadItems();
+      subscribeRealtime();
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Entrar — Quadro Compartilhado</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="login-wrap">
+    <div class="login-box">
+      <h1>Entrar no quadro</h1>
+      <form id="login-form">
+        <input type="email" id="email" placeholder="E-mail" autocomplete="username" required />
+        <input type="password" id="password" placeholder="Senha" autocomplete="current-password" required />
+        <button type="submit">Entrar</button>
+        <div class="error-msg" id="error-msg"></div>
+      </form>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="config.js"></script>
+  <script>
+    const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    // Se já estiver logado, vai direto para o quadro
+    supabaseClient.auth.getSession().then(({ data }) => {
+      if (data.session) window.location.href = "board.html";
+    });
+
+    const form = document.getElementById("login-form");
+    const errorMsg = document.getElementById("error-msg");
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      errorMsg.textContent = "";
+      const email = document.getElementById("email").value.trim();
+      const password = document.getElementById("password").value;
+
+      try {
+        const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
+        if (error) {
+          console.error("Erro de login:", error);
+          errorMsg.textContent = error.message;
+          return;
+        }
+        window.location.href = "board.html";
+      } catch (err) {
+        console.error("Falha ao conectar no Supabase:", err);
+        errorMsg.textContent = "Erro de conexão: " + err.message;
+      }
+    });
+  </script>
+</body>
+</html>
