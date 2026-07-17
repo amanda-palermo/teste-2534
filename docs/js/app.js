@@ -42,17 +42,19 @@ document.getElementById("theme-dark-btn")?.addEventListener("click", () => apply
 applyTheme(currentTheme());
 
 // ---------------------------------------------------------------------------
-// Navegacao entre "abas" (Painel CASH3 / Metodologia) - tudo na mesma pagina,
-// so mostra/esconde a section correspondente.
+// Navegacao entre abas (Visao geral / Metodologia) dentro do Painel CASH3 -
+// tudo na mesma pagina, so mostra/esconde a section correspondente.
 // ---------------------------------------------------------------------------
-document.querySelectorAll(".nav-link[data-view]").forEach((link) => {
-  link.addEventListener("click", (e) => {
-    e.preventDefault();
+document.querySelectorAll(".tab-link[data-view]").forEach((link) => {
+  link.addEventListener("click", () => {
     const view = link.getAttribute("data-view");
-    document.querySelectorAll(".nav-link[data-view]").forEach((l) => l.classList.toggle("active", l === link));
+    document.querySelectorAll(".tab-link[data-view]").forEach((l) => l.classList.toggle("active", l === link));
     document.querySelectorAll(".view").forEach((v) => {
       v.style.display = v.id === `view-${view}` ? "" : "none";
     });
+    // O seletor de data so faz sentido na Visao geral (Metodologia nao depende de data).
+    document.getElementById("painel-filter-bar").style.display = view === "painel" ? "" : "none";
+    if (view !== "painel") document.getElementById("date-notice").style.display = "none";
   });
 });
 
